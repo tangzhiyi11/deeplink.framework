@@ -110,7 +110,7 @@ class MemoryPool:
 
     def init_work_weight_ptr(self):
         if self.work_ptr is None:
-            self.work_size = 15 * 1024 * 1024 * 1024
+            self.work_size = 18 * 1024 * 1024 * 1024
             self.work_ptr, ret = acl.rt.malloc(self.work_size,
                                                ACL_MEM_MALLOC_HUGE_FIRST)
             check_ret("acl.rt.malloc", ret)
@@ -124,6 +124,7 @@ class MemoryPool:
 
 
 memory_pool = MemoryPool()
+zero_tensor = torch.randn(1).to(dipu_device_str)
 
 
 class AscendExecutor(object):
@@ -172,12 +173,13 @@ class AscendExecutor(object):
         if work_size == 0:
             work_size = memory_pool.work_size
         elif work_size > memory_pool.work_size:
-            memory_pool.work_size = work_size
-            memory_pool.release_memory()
-            print("Adjust memory pool allocation.")
-            memory_pool.work_ptr, ret = acl.rt.malloc(work_size,
-                                                      ACL_MEM_MALLOC_HUGE_FIRST)
-            check_ret("acl.rt.malloc", ret)
+            pass
+            # memory_pool.work_size = work_size
+            # memory_pool.release_memory()
+            # print("Adjust memory pool allocation.")
+            # memory_pool.work_ptr, ret = acl.rt.malloc(work_size,
+            #                                           ACL_MEM_MALLOC_HUGE_FIRST)
+            # check_ret("acl.rt.malloc", ret)
 
         self.weight_ptr, ret = acl.rt.malloc(weight_size,
                                              ACL_MEM_MALLOC_HUGE_FIRST)
@@ -254,7 +256,6 @@ class AscendExecutor(object):
 
     def _prepare_input(self, images, dims):
         assert self.num_inputs == len(images)
-        zero_tensor = torch.randn(1).to(dipu_device_str)
         for i in range(self.num_inputs):
             buffer_size = self.input_size[i]
             if dims is not None and i in dims.keys():

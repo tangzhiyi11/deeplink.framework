@@ -369,11 +369,11 @@ class AscendCodegen(torch.fx.Interpreter):
                              for idx in range(len(args)):
                                  if isinstance(args[idx], int):
                                      args[idx] = torch.tensor(args[idx], device=dipu_device_str, dtype=torch.int32)
-                                 if isinstance(args[idx], torch.Tensor):
-                                     tmp_arg = args[idx].clone()
-                                     with torch.no_grad():
-                                         args[idx].copy_(tmp_arg)
-                                     del tmp_arg
+                                 # if isinstance(args[idx], torch.Tensor):
+                                 #     tmp_arg = args[idx].clone()
+                                 #     with torch.no_grad():
+                                 #         args[idx].copy_(tmp_arg)
+                                 #     del tmp_arg
                          """, strip=True)
         call_body.writeline(f"({','.join(self.args)}) = args")
         call_str = ['output_tensor = kernel_cpp_0(args, dims, output_shape, out_stride, out_storage_offset)']
@@ -710,6 +710,13 @@ class AscendOverrides:
         op = OP(name, "Mul")
         op.set_input("x1", x)
         op.set_input("x2", y)
+        return op.to_node()
+
+    @staticmethod
+    def Muls(name, x, y):
+        op = OP(name, "Muls")
+        op.set_input("x", x)
+        op.set_attr_float("value", float(y))
         return op.to_node()
 
     @staticmethod

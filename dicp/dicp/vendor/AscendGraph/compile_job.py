@@ -70,7 +70,9 @@ class AscendCompileJob(DeviceCompileJob):
         self._compile()
         cmd = [self._lib_path, output_path, graph_path, self.fusion_switch_file]
         try:
-            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            print(cmd)
+            output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            print(output.decode('utf-8'))
         except subprocess.CalledProcessError as e:
             raise exc.CppCompileError(cmd, e.output) from e
 
