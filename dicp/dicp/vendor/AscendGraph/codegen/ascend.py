@@ -360,6 +360,10 @@ class AscendCodegen(torch.fx.Interpreter):
         out_storage_offset_str += extra_storage_offset_str
         out_stride_str = out_stride_str[:-1] + ']'
         out_storage_offset_str = out_storage_offset_str[:-1] + ']'
+        if out_stride_str == 'out_stride = ]':
+            out_stride_str = 'out_stride = []'
+        if out_storage_offset_str == 'out_storage_offset = ]':
+            out_storage_offset_str = 'out_storage_offset = []'
         call_body.writeline(out_stride_str)
         call_body.writeline(out_storage_offset_str)
 

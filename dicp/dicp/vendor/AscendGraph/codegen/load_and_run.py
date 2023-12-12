@@ -110,7 +110,7 @@ class MemoryPool:
 
     def init_work_weight_ptr(self):
         if self.work_ptr is None:
-            self.work_size = 15 * 1024 * 1024 * 1024
+            self.work_size = 18 * 1024 * 1024 * 1024
             self.work_ptr, ret = acl.rt.malloc(self.work_size,
                                                ACL_MEM_MALLOC_HUGE_FIRST)
             check_ret("acl.rt.malloc", ret)
@@ -173,12 +173,13 @@ class AscendExecutor(object):
         if work_size == 0:
             work_size = memory_pool.work_size
         elif work_size > memory_pool.work_size:
-            memory_pool.work_size = work_size
-            memory_pool.release_memory()
-            print("Adjust memory pool allocation.")
-            memory_pool.work_ptr, ret = acl.rt.malloc(work_size,
-                                                      ACL_MEM_MALLOC_HUGE_FIRST)
-            check_ret("acl.rt.malloc", ret)
+            print('need work_size:', work_size)
+            # memory_pool.work_size = work_size
+            # memory_pool.release_memory()
+            # print("Adjust memory pool allocation.")
+            # memory_pool.work_ptr, ret = acl.rt.malloc(work_size,
+            #                                           ACL_MEM_MALLOC_HUGE_FIRST)
+            # check_ret("acl.rt.malloc", ret)
 
         self.weight_ptr, ret = acl.rt.malloc(weight_size,
                                              ACL_MEM_MALLOC_HUGE_FIRST)
@@ -204,7 +205,7 @@ class AscendExecutor(object):
         check_ret("set_config_opt", ret)
 
         ret = acl.mdl.set_config_opt(
-            config_handle, ACL_MDL_WORKSPACE_SIZET, work_size)
+            config_handle, ACL_MDL_WORKSPACE_SIZET, memory_pool.work_size)
         check_ret("set_config_opt", ret)
 
         ret = acl.mdl.set_config_opt(

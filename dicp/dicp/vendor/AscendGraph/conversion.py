@@ -790,9 +790,12 @@ class AtenToAscendTransformer(SingleOpTransformer):
             x_dtype = torch.float32
             need_cast = True
         y = self.get_proxy(ascend_op.Const, (y, x_dtype))
-        y_shape = list(x.node.meta['val'].shape)
-        shape_preprocess = self.get_shape_proxy(y_shape)
-        y = self.get_proxy(ascend_op.BroadcastTo, (y, shape_preprocess))
+        # y_shape = list(x.node.meta['val'].shape)
+        # if y_shape == []:
+        #     import pdb;pdb.set_trace()
+        #     pass
+        # shape_preprocess = self.get_shape_proxy(y_shape)
+        # y = self.get_proxy(ascend_op.BroadcastTo, (y, shape_preprocess))
         if need_cast:
             y = self.get_proxy(ascend_op.Cast, (y, "FLOAT16"))
         return y
@@ -800,6 +803,8 @@ class AtenToAscendTransformer(SingleOpTransformer):
     @register_conversion(aten.sub)
     def sub(self, x, y):
         if not isinstance(y, torch.fx.proxy.Proxy):
+            import pdb;pdb.set_trace()
+            pass
             y = self.common_process_scalar(x, y)
         return self.get_proxy(ascend_op.Sub, (x, y))
 
