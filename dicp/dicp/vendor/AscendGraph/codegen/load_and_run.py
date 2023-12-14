@@ -305,16 +305,16 @@ class AscendExecutor(object):
     @record_function('load_and_run_prepare_dynamic_output')
     def _prepare_dynamic_output(self, output_tensor, output_shape, out_stride, out_storage_offset, allocated_output):
         for i in range(self.num_outputs):
+            tot_size = 1
+            for elem in output_shape[i]:
+                tot_size *= elem
+            dtype = acl.mdl.get_output_data_type(self.model_desc, i)
+            tot_size *= acl.data_type_size(dtype)
+            self.output_dims[i] = output_shape[i]
+            self.output_size[i] = tot_size
             if allocated_output and i in allocated_output.keys():
                 item = allocated_output[i]
             else:
-                tot_size = 1
-                for elem in output_shape[i]:
-                    tot_size *= elem
-                dtype = acl.mdl.get_output_data_type(self.model_desc, i)
-                tot_size *= acl.data_type_size(dtype)
-                self.output_dims[i] = output_shape[i]
-                self.output_size[i] = tot_size
                 item = torch.empty(
                     self.output_dims[i], dtype=self.output_dtypes[i], device=dipu_device_str)
             # TODO! add case judgement for stride info
