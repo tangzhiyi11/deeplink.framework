@@ -60,6 +60,7 @@ class Operator(ABC):
         return fake_mode
 
     def __call__(self, *args, **kwargs):
+        return
         def get_meta(x):
             return x if not hasattr(x, "meta") else x.meta["val"]
 

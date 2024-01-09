@@ -76,6 +76,7 @@ def ascendgraph_opset_convert(
 ):
     gm = BackendPatternMatcherTransformer(
         ascend_pattern_matcher, aten_patterns_cls_list).transform(gm)
+    gm.print_readable()
     gm = AtenToAscendTransformer(gm).transform()
 
     # For bug in pytorch

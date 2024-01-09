@@ -27,6 +27,8 @@ def get_ascend_dtype_num(dtype: str):
         return 4
     elif dtype == "UINT64":
         return 10
+    elif dtype == "BF16":
+        return 27
     else:
         raise RuntimeError("unknow torch data tyep type in get_ascend_dtype!")
 
@@ -44,6 +46,8 @@ def get_ascend_dtype(dtype: torch.dtype) -> str:
         return "INT32"
     elif dtype == torch.complex64:
         return "COMPLEX64"
+    elif dtype == torch.bfloat16:
+        return "BF16"
     else:
         raise RuntimeError("unknow torch data tyep type in get_ascend_dtype!")
 
@@ -57,3 +61,9 @@ def get_cpp_dtype(dtype: torch.dtype) -> str:
         return "INT32"
     else:
         raise RuntimeError("unknow torch data tyep type in get_cpp_dtype!")
+
+
+def is_need_cast_dtype(dtype):
+    if dtype in [torch.float16, torch.bfloat16]:
+        return True
+    return False

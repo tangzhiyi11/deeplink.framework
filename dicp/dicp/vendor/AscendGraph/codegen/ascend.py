@@ -15,6 +15,7 @@ from dicp.vendor.AscendGraph.codegen.utils import (
 graph_id = 0
 
 precision_check = bool(os.environ.get("DICP_ASCEND_PRECISION_CHECK", False))
+ascend_fallback_check = bool(os.environ.get("DICP_ASCEND_FALLBACK", False))
 
 
 def get_graph_id():
@@ -372,8 +373,8 @@ class AscendCodegen(torch.fx.Interpreter):
             output_index = self.graph_output_names.index(item[0])
             allocated_output[output_index] = input_index
         call_body.writeline(f'allocated_output= {allocated_output}')
-        call_str = ['output_tensor = kernel_cpp_0(args, dims, output_shape, out_stride, out_storage_offset, allocated_output)']
 
+        call_str = []
         if precision_check and self.aten_graph is not None:
             # import aten graph
             call_str.append(f"import sys")
@@ -386,22 +387,69 @@ class AscendCodegen(torch.fx.Interpreter):
             call_str.append('for idx in modified:')
             call_str.append('    aten_args[idx] = aten_args[idx].item()')
             call_str.append('aten_output = aten_call(*aten_args)')
+        elif ascend_fallback_check and self.aten_graph is not None:
+            # import aten graph
+            call_str.append(f"import sys")
+            call_str.append(f"if '{self.folder}' not in sys.path:")
+            call_str.append(f"    sys.path.insert(0, '{self.folder}')")
+            call_str.append(f"from {self.graph_key[:4]} import {self.graph_key} as graph_module")
+            call_str.append(f"aten_call = graph_module()")
 
-        for i, name in enumerate(self.graph_output_names):
-            if name not in self.symint_outputs:
-                if name in self.cpu_tensor:
-                    call_str.append(f'{name} = output_tensor[{i}].cpu()')
-                else:
-                    call_str.append(f'{name} = output_tensor[{i}]')
-            else:
-                call_str.extend([f'del {name}',
-                                 f'{name} = int(output_tensor[{i}])'])
+            call_str.append('aten_args = list(map(lambda x: x.to("cpu"), args))')
+            # call_str.append('aten_output = aten_call(*aten_args)')          
+
+
+
+        if ascend_fallback_check:
+            call_str.append('try:')
+            call_str.append('   output_tensor = kernel_cpp_0(args, dims, output_shape, out_stride, out_storage_offset, allocated_output)')
+            call_str.append('except Exception as e:')
+            call_str.append('   aten_output = aten_call(*aten_args)')
+            call_str.append('   output_tensor = [t.to("dipu") for t in aten_output]')
+        else:
+            call_str.append('output_tensor = kernel_cpp_0(args, dims, output_shape, out_stride, out_storage_offset, allocated_output)')
+
 
         if precision_check:
             for i, name in enumerate(self.py_output_names):
                 if name != 'None' and name not in self.args and name not in self.symint_outputs:
                     call_str.append(f"{name}_cpu = aten_output[{i}]")
                     call_str.append(f"check_tensor({name}.cpu(), {name}_cpu)")
+
+        if ascend_fallback_check:
+            call_str.append('try:')
+            for i, name in enumerate(self.graph_output_names):
+                if name not in self.symint_outputs:
+                    if name in self.cpu_tensor:
+                        call_str.append(f'  {name} = output_tensor[{i}].cpu()')
+                    else:
+                        call_str.append(f'  {name} = output_tensor[{i}]')
+                else:
+                    call_str.extend([f' del {name}',
+                                    f'  {name} = int(output_tensor[{i}])'])
+            call_str.append('except Exception as e:')  
+            call_str.append('   aten_output = aten_call(*aten_args)')
+            call_str.append('   output_tensor = [t.to("dipu") for t in aten_output]')
+            for i, name in enumerate(self.graph_output_names):
+                if name not in self.symint_outputs:
+                    if name in self.cpu_tensor:
+                        call_str.append(f'  {name} = output_tensor[{i}].cpu()')
+                    else:
+                        call_str.append(f'  {name} = output_tensor[{i}]')
+                else:
+                    call_str.extend([f' del {name}',
+                                    f'  {name} = int(output_tensor[{i}])'])
+        else:
+            for i, name in enumerate(self.graph_output_names):
+                if name not in self.symint_outputs:
+                    if name in self.cpu_tensor:
+                        call_str.append(f'{name} = output_tensor[{i}].cpu()')
+                    else:
+                        call_str.append(f'{name} = output_tensor[{i}]')
+                else:
+                    call_str.extend([f'del {name}',
+                                    f'{name} = int(output_tensor[{i}])'])
+            
         call_body.writelines(call_str)
 
         del_args = [f'del {x}' for x in self.args if x not in self.py_output_names]
@@ -1086,7 +1134,7 @@ class AscendOverrides:
 
     @staticmethod
     def MatMul(name, x1, x2, trans_x1: bool, trans_x2: bool):
-        op = OP(name, "MatMul")
+        op = OP(name, "MatMulV2")
         op.set_input("x1", x1)
         op.set_input("x2", x2)
         op.set_attr_bool("transpose_x1", trans_x1)
@@ -1463,3 +1511,31 @@ class AscendOverrides:
         op.set_input("mask", mask)
         op.set_input("keep_prob", keep_prob)
         return op.to_node()
+
+    @staticmethod
+    def RepeatInterleave(name, x, repeats, axis=0):
+        op = OP(name, "RepeatInterleave")
+        op.set_input("x", x)
+        op.set_input("repeats", repeats)
+        op.set_attr_int("axis", axis)
+        return op.to_node()
+
+    @staticmethod
+    def SplitV(name, x, size_splits, split_dim, num_split):
+        op = OP(name, "SplitV")
+        op.set_input("x", x)
+        op.set_input("size_splits", size_splits)
+        op.set_input("split_dim", split_dim)
+        op.set_attr_int("num_split", num_split)
+        op.set_dynamic_output("y", num_split)
+        return op.to_node()
+
+    # @staticmethod
+    # def SplitVD(name, x, size_splits, split_dim, num_split):
+    #     op = OP(name, "SplitVD")
+    #     op.set_input("x", x)
+    #     op.set_attr_list_int("size_splits", size_splits)
+    #     op.set_attr_int("split_dim", split_dim)
+    #     op.set_attr_int("num_split", num_split)
+    #     op.set_dynamic_output("y", num_split)
+    #     return op.to_node()

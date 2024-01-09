@@ -781,6 +781,16 @@ class DropOutDoMaskV3(Operator):
         super().__init__("DropOutDoMaskV3")
 
 
+class RepeatInterleave(Operator):
+    def __init__(self):
+        super().__init__("RepeatInterleave")
+
+
+class SplitV(Operator):
+    def __init__(self):
+        super().__init__("SplitV")
+
+
 def ret_triple(a, b, c) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return a, b, c
 
