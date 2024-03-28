@@ -109,6 +109,7 @@ buffer_method = {
 
 def check_ret(message, ret):
     if ret != ACL_SUCCESS:
+        import pdb;pdb.set_trace()
         raise Exception("{} failed ret={}"
                         .format(message, ret))
 
@@ -121,7 +122,7 @@ class MemoryPool:
 
     def init_work_weight_ptr(self):
         if self.work_ptr is None:
-            self.work_size = 18 * 1024 * 1024 * 1024
+            self.work_size = int(3 * 1024 * 1024 * 1024)
             self.work_ptr, ret = acl.rt.malloc(self.work_size,
                                                ACL_MEM_MALLOC_HUGE_FIRST)
             check_ret("acl.rt.malloc", ret)
@@ -180,20 +181,22 @@ class AscendExecutor(object):
     def load_model(self):
         work_size, weight_size, ret = acl.mdl.query_size(self.model_path)
         check_ret("acl.mdl.query_size", ret)
-        if work_size == 0:
-            work_size = memory_pool.work_size
-        elif work_size > memory_pool.work_size:
-            free, _, ret = acl.rt.get_mem_info(ACL_HBM_MEM)
-            check_ret("acl.rt.get_mem_info", ret)
-            # If free < work_size, means that memory is insufficient.
-            # Just ignore and continue, it may be work.
-            if free > work_size:
-                memory_pool.work_size = work_size
-                memory_pool.release_memory()
-                print("Adjust memory pool allocation.")
-                memory_pool.work_ptr, ret = acl.rt.malloc(work_size,
-                                                        ACL_MEM_MALLOC_HUGE_FIRST)
-                check_ret("acl.rt.malloc", ret)
+        # print('### query_size:', work_size)
+        # if work_size == 0:
+        #     work_size = memory_pool.work_size
+        # elif work_size > memory_pool.work_size:
+        #     free, _, ret = acl.rt.get_mem_info(ACL_HBM_MEM)
+        #     check_ret("acl.rt.get_mem_info", ret)
+        #     # If free < work_size, means that memory is insufficient.
+        #     # Just ignore and continue, it may be work.
+        #     if free > work_size:
+        #         memory_pool.work_size = work_size
+        #         memory_pool.release_memory()
+        #         import pdb;pdb.set_trace()
+        #         print("Adjust memory pool allocation.")
+        #         memory_pool.work_ptr, ret = acl.rt.malloc(work_size,
+        #                                                 ACL_MEM_MALLOC_HUGE_FIRST)
+        #         check_ret("acl.rt.malloc", ret)
 
         self.weight_ptr, ret = acl.rt.malloc(weight_size,
                                              ACL_MEM_MALLOC_HUGE_FIRST)
@@ -297,8 +300,17 @@ class AscendExecutor(object):
                 assert (dataset == self.input_dataset)
 
     @record_function('load_and_run_prepare_output')
-    def _prepare_output(self, output_tensor, output_shape, out_stride, out_storage_offset, allocated_output):
+    def _prepare_output(self, output_tensor, output_shape, out_stride, out_storage_offset, allocated_output, allocated_output_with_offset_tensor):
         for i in range(self.num_outputs):
+            # if allocated_output_with_offset_tensor and i in allocated_output_with_offset_tensor.keys():
+            #     item = allocated_output_with_offset_tensor[i]['input_tensor']
+            #     offset = allocated_output_with_offset_tensor[i]['offset']
+            #     ret = acl.update_data_buffer(
+            #         self.output_data_buffers[i], item.data_ptr() + offset, self.output_size[i])
+            #     check_ret("acl.update_data_buffer", ret)
+            #     output_tensor.append(item)
+            #     continue    
+            
             if allocated_output and i in allocated_output.keys():
                 item = allocated_output[i]
             else:
@@ -336,29 +348,51 @@ class AscendExecutor(object):
                 self.output_data_buffers[i], item.data_ptr(), self.output_size[i])
             check_ret("acl.update_data_buffer", ret)
 
-    @record_function('load_and_run_run')
+    def dump_tensor(self, x, name):
+        import pickle
+        with open(f'/tzy/ext_ops/copy_with_offset/{name}.pkl', 'wb') as f:
+            if isinstance(x, torch.Tensor):
+                pickle.dump(x.cpu(), f)
+            else:
+                pickle.dump(x, f)
+
+    # @record_function(f'load_and_run_run')
     def run(self, images, dims=None, output_shape=None,
             out_stride=None, out_storage_offset=None,
-            allocated_output=None):
-        assert len(images) > 0
-        input = [x.to(dipu_device_str) if isinstance(x, torch.Tensor)
-                 and x.device.type != dipu_device_str else x for x in images]
-        allocated_output_tensor = None
-        if allocated_output:
-            allocated_output_tensor = {}
-            for output_index, input_index in allocated_output.items():
-                allocated_output_tensor[output_index] = input[input_index]
-        self._prepare_input(input, dims)
-        output = []
-        if output_shape:
-            self._prepare_dynamic_output(
-                output, output_shape, out_stride, out_storage_offset, allocated_output_tensor)
-        else:
-            self._prepare_output(
-                output, output_shape, out_stride, out_storage_offset, allocated_output_tensor)
-        self.forward()
-        self._destroy_databuffer()
-        return output
+            allocated_output=None, allocated_with_offset_output=None):
+        # print('### load_and_run: model_id:', self.model_id)
+        # if self.model_id == 8:
+        #     for i, arg in enumerate(images):
+        #         self.dump_tensor(arg.cpu(), f"arg{i}")
+        #     import pdb;pdb.set_trace()
+        #     pass
+        with record_function(f'load_and_run_run_{self.model_id}'):
+            assert len(images) > 0
+            input = [x.to(dipu_device_str) if isinstance(x, torch.Tensor)
+                    and x.device.type != dipu_device_str else x for x in images]
+            allocated_output_tensor = None
+            if allocated_output:
+                allocated_output_tensor = {}
+                for output_index, input_index in allocated_output.items():
+                    allocated_output_tensor[output_index] = input[input_index]
+
+            allocated_output_with_offset_tensor = None
+            if allocated_with_offset_output:
+                allocated_output_with_offset_tensor = {}
+                for item in allocated_with_offset_output:
+                    allocated_output_with_offset_tensor[item['output_index']] = {'input_tensor': input[item['input_index']], 'offset': item['offset']}
+
+            self._prepare_input(input, dims)
+            output = []
+            if output_shape:
+                self._prepare_dynamic_output(
+                    output, output_shape, out_stride, out_storage_offset, allocated_output_tensor)
+            else:
+                self._prepare_output(
+                    output, output_shape, out_stride, out_storage_offset, allocated_output_tensor, allocated_output_with_offset_tensor)
+            self.forward()
+            self._destroy_databuffer()
+            return output
 
     @record_function('load_and_run_forward')
     def forward(self):
@@ -380,8 +414,8 @@ class AscendModel():
         self.exe = AscendExecutor(device_id, model_path)
 
     def run(self, images, dims=None, output_shape=None,
-            out_stride=None, out_storage_offset=None, allocated_output=None):
-        return self.exe.run(images, dims, output_shape, out_stride, out_storage_offset, allocated_output)
+            out_stride=None, out_storage_offset=None, allocated_output=None, allocated_with_offset_output=None):
+        return self.exe.run(images, dims, output_shape, out_stride, out_storage_offset, allocated_output, allocated_with_offset_output)
 
     def cleanup(self):
         if hasattr(self, 'exe'):

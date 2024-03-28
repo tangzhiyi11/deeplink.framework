@@ -66,6 +66,7 @@ class AscendCompileJob(DeviceCompileJob):
             os.system("mkdir -p /tmp/dicp_ascend")
             start = time.time()
             try:
+                print(' '.join(self._cmd))
                 subprocess.check_output(self._cmd, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as e:
                 raise exc.CppCompileError(self._cmd, e.output) from e
@@ -78,7 +79,9 @@ class AscendCompileJob(DeviceCompileJob):
         self._compile()
         cmd = [self._lib_path, output_path, graph_path, self.fusion_switch_file]
         try:
-            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            print(' '.join(cmd))
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            print(out.decode('utf-8'))
         except subprocess.CalledProcessError as e:
             raise exc.CppCompileError(cmd, e.output) from e
 
