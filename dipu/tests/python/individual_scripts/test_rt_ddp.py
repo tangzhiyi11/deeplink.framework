@@ -387,7 +387,7 @@ def test_get_comm_name(rank, world_size, port):
     if torch_dipu.dipu.vendor_type == "NPU":
         print(f"test get comm name on rank {rank} ")
 
-        setup(rank, world_size)
+        setup(rank, world_size, port)
 
         _ = torch.ones((2, 4)).to(rank)
         group = dist.distributed_c10d._get_default_group()
