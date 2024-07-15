@@ -1,5 +1,4 @@
 {
     "ge.graphRunMode": "0",
-    "ge.exec.precision_mode": "allow_fp32_to_fp16",
-    "ge.op_compiler_cache_mode": "disable"
+    "ge.exec.precision_mode": "allow_fp32_to_fp16"
 }
